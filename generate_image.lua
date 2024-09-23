@@ -1,12 +1,10 @@
 local JSON = require("json")
 local ltn12 = require("ltn12")
 local socket = require("socket")
-local base64 = require('ffi/sha2')
 local http = require("socket.http")
 local socket_url = require("socket.url")
 local socketutil = require("socketutil")
 local UIManager = require("ui/uimanager")
-local RenderImage = require("ui/renderimage")
 local ImageViewer = require("ui/widget/imageviewer")
 local InfoMessage = require("ui/widget/infomessage")
 local _ = require("gettext")
@@ -17,7 +15,7 @@ local function getOpenAIApiKey()
     return os.getenv("OPENAI_API_KEY") or "your_openai_api_key_here"
 end
 
-local function getUrlContent(context_prompt, url, timeout, maxtime)
+local function getUrlContent(prompt, url, timeout, maxtime)
     local parsed = socket_url.parse(url)
     if parsed.scheme ~= "http" and parsed.scheme ~= "https" then
         return false, "Unsupported protocol"
@@ -25,10 +23,11 @@ local function getUrlContent(context_prompt, url, timeout, maxtime)
     if not timeout then timeout = 60 end
 
     local requestBodyTable = {
-        prompt = context_prompt,
+        model = "dall-e-3",
+        prompt = prompt,
         n = 1,
-        size = "512x512",
-        response_format = "b64_json"
+        size = "1024x1024",
+        quality = "standard"
     }
 
     local requestBody = JSON.encode(requestBodyTable)
@@ -71,11 +70,26 @@ local function getUrlContent(context_prompt, url, timeout, maxtime)
     end
 
     local response = JSON.decode(content)
-    if response and response.data and response.data[1] and response.data[1].b64_json then
-        return true, response.data[1].b64_json
+    if response and response.data and response.data[1] and response.data[1].url then
+        return true, response.data[1].url
     else
         return false, "Unexpected response format"
     end
+end
+
+local function downloadImage(url)
+    local response = {}
+    local request, code, responseHeaders = http.request {
+        url = url,
+        method = "GET",
+        sink = ltn12.sink.table(response)
+    }
+    
+    if code ~= 200 then
+        return nil, "Failed to download image: HTTP " .. tostring(code)
+    end
+    
+    return table.concat(response)
 end
 
 local function generateImage(ui, highlightedText)
@@ -87,17 +101,29 @@ local function generateImage(ui, highlightedText)
         return
     end
 
-    local img = base64.base64_to_bin(data)
-    
-    local bb = RenderImage:renderImageData(img, #img, true)
+    -- Download the image from the URL
+    local imageData, error = downloadImage(data)
+    if not imageData then
+        UIManager:show(InfoMessage:new{text = _("Failed to download image: " .. tostring(error))})
+        return
+    end
 
-    local imgviewer = ImageViewer:new{
-        image = bb,
-        image_disposable = false,
-        with_title_bar = true,
-        fullscreen = true,
-    }
-    UIManager:show(imgviewer)
+    -- Create a temporary file to store the image
+    local tempFilePath = "/tmp/generated_image.png"
+    local file = io.open(tempFilePath, "wb")
+    if file then
+        file:write(imageData)
+        file:close()
+
+        local imgviewer = ImageViewer:new{
+            file = tempFilePath,
+            with_title_bar = true,
+            fullscreen = true,
+        }
+        UIManager:show(imgviewer)
+    else
+        UIManager:show(InfoMessage:new{text = _("Failed to save image temporarily")})
+    end
 end
 
 return generateImage
