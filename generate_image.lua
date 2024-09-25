@@ -9,11 +9,8 @@ local ImageViewer = require("ui/widget/imageviewer")
 local InfoMessage = require("ui/widget/infomessage")
 local _ = require("gettext")
 
--- TODO: Implement a secure method to store and retrieve the API key
-local function getOpenAIApiKey()
-    -- This is a placeholder. In a real-world scenario, you'd retrieve this securely.
-    return os.getenv("OPENAI_API_KEY") or "your_openai_api_key_here"
-end
+-- Hardcoded API key
+local OPENAI_API_KEY = "your_openai_api_key_here"
 
 local function getUrlContent(prompt, url, timeout, maxtime)
     local parsed = socket_url.parse(url)
@@ -39,7 +36,7 @@ local function getUrlContent(prompt, url, timeout, maxtime)
         method  = "POST",
         headers = {
             ["Content-Type"] = "application/json",
-            ["Authorization"] = "Bearer " .. getOpenAIApiKey()
+            ["Authorization"] = "Bearer " .. OPENAI_API_KEY
         },
         source  = ltn12.source.string(requestBody),
         sink    = ltn12.sink.table(sink),
